@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GIF → PNG Converter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        html, body {
+            overflow: hidden;
+            height: 100%;
+            width: 100%;
+            position: fixed;
+            top: 0; left: 0;
+        }
+        #app-root {
+            height: 100dvh; height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .preview-img {
+            max-height: 30vh;
+            object-fit: contain;
+        }
+        .scrollbar-thin::-webkit-scrollbar { width: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .dark .scrollbar-thin::-webkit-scrollbar-thumb { background: #475569; }
+        .tab-btn.active {
+            background-color: #4f46e5;
+            color: white;
+            border-color: #4f46e5;
+        }
+        .dark .tab-btn.active {
+            background-color: #6366f1;
+            border-color: #6366f1;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors duration-300 font-sans antialiased">
+    <div id="app-root">
+        <!-- Header -->
+        <header class="flex-shrink-0 h-[7vh] min-h-[44px] max-h-[56px] flex items-center justify-between px-3 sm:px-4 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md z-30">
+            <div class="flex items-center gap-2 min-w-0">
+                <i class="fa-solid fa-file-image text-lg sm:text-xl flex-shrink-0 text-emerald-600 dark:text-emerald-400"></i>
+                <h1 class="text-xs sm:text-sm md:text-base font-bold tracking-tight truncate">GIF → PNG</h1>
+            </div>
+            <button id="theme-toggle" class="flex-shrink-0 w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 active:scale-90 text-base sm:text-lg" aria-label="Toggle theme">
+                <i class="fa-solid fa-moon"></i>
+            </button>
+        </header>
+
+        <!-- Main -->
+        <main class="flex-1 overflow-y-auto scrollbar-thin px-2 sm:px-3 md:px-4 py-2 sm:py-3 space-y-3" style="height: calc(100dvh - 7vh - 5vh - 1px);">
+            <!-- Tab Navigation -->
+            <nav class="flex border-b border-gray-200 dark:border-gray-700 space-x-1 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm rounded-t-lg">
+                <button class="tab-btn active px-3 py-2 text-xs sm:text-sm font-medium rounded-t-lg transition-colors" data-tab="single">Single</button>
+                <button class="tab-btn px-3 py-2 text-xs sm:text-sm font-medium rounded-t-lg transition-colors" data-tab="batch">Batch</button>
+            </nav>
+
+            <!-- Pane: Single -->
+            <div id="pane-single">
+                <div class="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-200 dark:border-gray-700 space-y-3">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-[10px] sm:text-xs font-medium text-gray-500 dark:text-gray-400">GIF URL or File</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="gifUrl" placeholder="https://ozoutback.com.au/Ethiopia/flags/slides/01_eth1800s.gif" class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 p-2 text-xs sm:text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500">
+                            <label class="py-2 px-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-xs sm:text-sm cursor-pointer transition-colors flex items-center gap-1">
+                                <i class="fa-solid fa-folder-open"></i> File
+                                <input type="file" id="gifFile" accept="image/gif" class="hidden">
+                            </label>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] sm:text-xs font-medium text-gray-500 dark:text-gray-400">Image Proxy URL</label>
+                        <input type="text" id="proxyUrlSingle" value="https://flags-scrapper-api.vercel.app/api/image-proxy?url=" class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 p-2 text-xs sm:text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    <button id="convertBtn" class="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition-colors text-xs sm:text-sm flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-rotate"></i> Convert to PNG
+                    </button>
+                    <div id="progressSingle" class="hidden text-center text-xs text-gray-500">Converting...</div>
+                    <div id="errorSingle" class="hidden text-center text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-2"></div>
+                </div>
+
+                <!-- Preview & Download (single) -->
+                <div class="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-200 dark:border-gray-700 space-y-3 mt-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-semibold">Preview</span>
+                        <div class="flex gap-1">
+                            <button id="downloadBtnSingle" class="py-1 px-3 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium transition-colors flex items-center gap-1">
+                                <i class="fa-solid fa-download"></i> PNG
+                            </button>
+                            <button id="downloadBlobSingle" class="py-1 px-3 rounded-md bg-gray-600 hover:bg-gray-700 text-white text-xs font-medium transition-colors flex items-center gap-1" disabled>
+                                <i class="fa-solid fa-database"></i> BLOB
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex justify-center bg-gray-100 dark:bg-gray-900 rounded-lg p-2 min-h-[100px] items-center">
+                        <span id="placeholderSingle" class="text-xs text-gray-400">No PNG ready yet.</span>
+                        <img id="previewImageSingle" class="preview-img rounded hidden" alt="Converted PNG preview">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pane: Batch (hidden initially) -->
+            <div id="pane-batch" class="hidden">
+                <div class="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-200 dark:border-gray-700 space-y-3">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-[10px] sm:text-xs font-medium text-gray-500 dark:text-gray-400">JSON Data (with imageUrl fields)</label>
+                        <textarea id="jsonInput" rows="6" placeholder='[{"imageUrl":"https://..."}, ...]' class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 p-2 text-xs sm:text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"></textarea>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] sm:text-xs font-medium text-gray-500 dark:text-gray-400">Image Proxy URL</label>
+                        <input type="text" id="proxyUrlBatch" value="https://flags-scrapper-api.vercel.app/api/image-proxy?url=" class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 p-2 text-xs sm:text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    <button id="convertBatchBtn" class="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition-colors text-xs sm:text-sm flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-rotate"></i> Convert All
+                    </button>
+
+                    <!-- Progress bar -->
+                    <div id="batchProgressContainer" class="hidden">
+                        <div class="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+                            <span id="batchProgressText">0 / 0</span>
+                            <span id="batchProgressPercent">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                            <div id="batchProgressBar" class="progress-bar bg-indigo-500 h-2 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Batch Results -->
+                <div id="batchResultsContainer" class="mt-3 bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-200 dark:border-gray-700 hidden">
+                    <div class="flex justify-between items-center mb-2">
+                        <div class="text-xs font-semibold">Conversion Results (<span id="batchResultCount">0</span>)</div>
+                        <div class="flex gap-1">
+                            <button id="downloadZipBtn" class="py-1 px-3 rounded-md bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors flex items-center gap-1" disabled>
+                                <i class="fa-solid fa-file-zipper"></i> PNG ZIP
+                            </button>
+                            <button id="downloadBlobsZipBtn" class="py-1 px-3 rounded-md bg-gray-600 hover:bg-gray-700 text-white text-xs font-medium transition-colors flex items-center gap-1" disabled>
+                                <i class="fa-solid fa-database"></i> BLOBs ZIP
+                            </button>
+                        </div>
+                    </div>
+                    <div id="batchResultsList" class="max-h-[50vh] overflow-y-auto scrollbar-thin space-y-1 divide-y divide-gray-100 dark:divide-gray-700"></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="flex-shrink-0 h-[5vh] min-h-[32px] max-h-[42px] flex items-center justify-between px-3 border-t border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/70 backdrop-blur-md z-20">
+            <p class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 truncate">Convert any GIF to PNG · single or batch with proxy</p>
+            <span class="text-[10px] text-gray-400 dark:text-gray-500">v3.2</span>
+        </footer>
+    </div>
+
+    <script>
+        (function() {
+            // ── Theme ──────────────────────────────────────────────
+            const themeToggle = document.getElementById('theme-toggle');
+            function getTheme() { try { return localStorage.getItem('theme') || 'light'; } catch { return 'light'; } }
+            function setTheme(theme) {
+                document.documentElement.classList.toggle('dark', theme === 'dark');
+                localStorage.setItem('theme', theme);
+                themeToggle.innerHTML = theme === 'dark' ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+            }
+            themeToggle.addEventListener('click', () => setTheme(getTheme() === 'dark' ? 'light' : 'dark'));
+            setTheme(getTheme());
+
+            // ── Tab switching ─────────────────────────────────────
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            const paneSingle = document.getElementById('pane-single');
+            const paneBatch = document.getElementById('pane-batch');
+            tabButtons.forEach(btn => btn.addEventListener('click', () => {
+                const tab = btn.getAttribute('data-tab');
+                tabButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                if (tab === 'single') {
+                    paneSingle.classList.remove('hidden');
+                    paneBatch.classList.add('hidden');
+                } else {
+                    paneSingle.classList.add('hidden');
+                    paneBatch.classList.remove('hidden');
+                }
+            }));
+
+            // ── Helper: data URL → blob URL ──────────────────────
+            function dataUrlToBlobUrl(dataUrl) {
+                const parts = dataUrl.split(',');
+                const mime = parts[0].split(':')[1].split(';')[0];
+                const byteString = atob(parts[1]);
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+                return URL.createObjectURL(new Blob([ab], { type: mime }));
+            }
+
+            // ── Single conversion logic ──────────────────────────
+            const gifUrlInput = document.getElementById('gifUrl');
+            const gifFileInput = document.getElementById('gifFile');
+            const proxyUrlSingle = document.getElementById('proxyUrlSingle');
+            const convertBtn = document.getElementById('convertBtn');
+            const progressSingle = document.getElementById('progressSingle');
+            const errorSingle = document.getElementById('errorSingle');
+            const previewImageSingle = document.getElementById('previewImageSingle');
+            const placeholderSingle = document.getElementById('placeholderSingle');
+            const downloadBtnSingle = document.getElementById('downloadBtnSingle');
+            const downloadBlobSingle = document.getElementById('downloadBlobSingle');
+            let singlePngDataUrl = null;
+            let singlePngBlobUrl = null;
+
+            function showErrorSingle(msg) {
+                errorSingle.textContent = msg;
+                errorSingle.classList.remove('hidden');
+                progressSingle.classList.add('hidden');
+            }
+            function hideErrorSingle() { errorSingle.classList.add('hidden'); }
+            function showPreviewSingle(blobUrl) {
+                if (singlePngBlobUrl) URL.revokeObjectURL(singlePngBlobUrl);
+                singlePngBlobUrl = blobUrl;
+                previewImageSingle.src = blobUrl;
+                previewImageSingle.classList.remove('hidden');
+                placeholderSingle.classList.add('hidden');
+                downloadBtnSingle.disabled = false;
+                downloadBlobSingle.disabled = false;
+            }
+            function resetPreviewSingle() {
+                previewImageSingle.classList.add('hidden');
+                placeholderSingle.classList.remove('hidden');
+                if (singlePngBlobUrl) {
+                    URL.revokeObjectURL(singlePngBlobUrl);
+                    singlePngBlobUrl = null;
+                }
+                singlePngDataUrl = null;
+                downloadBtnSingle.disabled = true;
+                downloadBlobSingle.disabled = true;
+            }
+            function convertSingle(source) {
+                const img = new Image();
+                img.crossOrigin = 'Anonymous';
+                img.onload = () => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.naturalWidth;
+                        canvas.height = img.naturalHeight;
+                        canvas.getContext('2d').drawImage(img, 0, 0);
+                        singlePngDataUrl = canvas.toDataURL('image/png');
+                        const blobUrl = dataUrlToBlobUrl(singlePngDataUrl);
+                        showPreviewSingle(blobUrl);
+                        hideErrorSingle();
+                        progressSingle.classList.add('hidden');
+                    } catch (e) {
+                        showErrorSingle('Conversion failed (CORS/security). Use file upload.');
+                        progressSingle.classList.add('hidden');
+                        resetPreviewSingle();
+                    }
+                };
+                img.onerror = () => {
+                    showErrorSingle('Failed to load GIF.');
+                    progressSingle.classList.add('hidden');
+                    resetPreviewSingle();
+                };
+                img.src = source;
+            }
+            convertBtn.addEventListener('click', () => {
+                const url = gifUrlInput.value.trim();
+                const file = gifFileInput.files[0];
+                if (!url && !file) { showErrorSingle('Provide URL or file.'); return; }
+                progressSingle.classList.remove('hidden');
+                hideErrorSingle();
+                resetPreviewSingle();
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => convertSingle(e.target.result);
+                    reader.onerror = () => showErrorSingle('File read error.');
+                    reader.readAsDataURL(file);
+                } else {
+                    const proxy = proxyUrlSingle.value.trim();
+                    let finalUrl = url;
+                    if (proxy && /^https?:\/\//i.test(url)) finalUrl = proxy + encodeURIComponent(url);
+                    convertSingle(finalUrl);
+                }
+            });
+            downloadBtnSingle.addEventListener('click', () => {
+                if (!singlePngDataUrl) { showErrorSingle('No PNG ready.'); return; }
+                const a = document.createElement('a');
+                a.href = singlePngDataUrl;
+                a.download = 'converted.png';
+                a.click();
+            });
+            downloadBlobSingle.addEventListener('click', () => {
+                if (!singlePngDataUrl) { showErrorSingle('No PNG ready.'); return; }
+                const base64 = singlePngDataUrl.split(',')[1];
+                const byteCharacters = atob(base64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/octet-stream' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'converted.bin';
+                a.click();
+                URL.revokeObjectURL(a.href);
+            });
+
+            // ── Batch conversion logic ────────────────────────────
+            const jsonInput = document.getElementById('jsonInput');
+            const proxyUrlBatch = document.getElementById('proxyUrlBatch');
+            const convertBatchBtn = document.getElementById('convertBatchBtn');
+            const batchProgressContainer = document.getElementById('batchProgressContainer');
+            const batchProgressBar = document.getElementById('batchProgressBar');
+            const batchProgressText = document.getElementById('batchProgressText');
+            const batchProgressPercent = document.getElementById('batchProgressPercent');
+            const batchResultsContainer = document.getElementById('batchResultsContainer');
+            const batchResultsList = document.getElementById('batchResultsList');
+            const batchResultCount = document.getElementById('batchResultCount');
+            const downloadZipBtn = document.getElementById('downloadZipBtn');
+            const downloadBlobsZipBtn = document.getElementById('downloadBlobsZipBtn');
+            let batchResults = [];
+
+            function extractImageUrls(jsonStr) {
+                try {
+                    const data = JSON.parse(jsonStr);
+                    const urls = [];
+                    const recurse = (obj) => {
+                        if (Array.isArray(obj)) obj.forEach(recurse);
+                        else if (obj && typeof obj === 'object') {
+                            if (obj.imageUrl && typeof obj.imageUrl === 'string' && obj.imageUrl.trim()) {
+                                urls.push(obj.imageUrl.trim());
+                            }
+                            Object.values(obj).forEach(recurse);
+                        }
+                    };
+                    recurse(data);
+                    return [...new Set(urls)];
+                } catch { return []; }
+            }
+
+            function updateBatchProgress(done, total) {
+                const pct = total ? Math.round((done / total) * 100) : 0;
+                batchProgressBar.style.width = `${pct}%`;
+                batchProgressText.textContent = `${done} / ${total}`;
+                batchProgressPercent.textContent = `${pct}%`;
+            }
+
+            function renderBatchResultRow(item, index) {
+                const div = document.createElement('div');
+                div.className = 'flex items-start gap-2 py-1.5';
+                div.setAttribute('data-index', index);
+                div.innerHTML = `
+                    <div class="w-10 flex-shrink-0 flex items-center justify-center">
+                        ${item.pngBlobUrl ? `<img src="${item.pngBlobUrl}" class="w-10 h-auto rounded border">` : (item.status === 'error' ? `<span class="text-red-500 text-xs">Error</span>` : `<span class="text-gray-400 text-xs">...</span>`)}
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-[10px] text-gray-600 dark:text-gray-400 truncate">${item.url}</div>
+                        <div class="text-[10px] mt-0.5">${item.status === 'done' ? `<span class="text-green-500">Converted</span>` : item.status === 'error' ? `<span class="text-red-500">${item.error}</span>` : `<span class="text-gray-500">Converting...</span>`}</div>
+                        ${item.pngDataUrl ? `
+                            <div class="flex gap-1 mt-1">
+                                <button class="py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs download-single-btn" data-index="${index}" data-type="png"><i class="fa-solid fa-download"></i> PNG</button>
+                                <button class="py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs download-single-btn" data-index="${index}" data-type="blob"><i class="fa-solid fa-database"></i> BLOB</button>
+                            </div>
+                        ` : ''}
+                    </div>`;
+                return div;
+            }
+
+            function updateZipButtons() {
+                const anyDone = batchResults.some(r => r.pngDataUrl);
+                downloadZipBtn.disabled = !anyDone;
+                downloadBlobsZipBtn.disabled = !anyDone;
+            }
+
+            function revokeAllBatchBlobUrls() {
+                batchResults.forEach(item => {
+                    if (item.pngBlobUrl) {
+                        URL.revokeObjectURL(item.pngBlobUrl);
+                        item.pngBlobUrl = null;
+                    }
+                });
+            }
+
+            async function convertBatch() {
+                const jsonStr = jsonInput.value.trim();
+                if (!jsonStr) return;
+                const urls = extractImageUrls(jsonStr);
+                if (urls.length === 0) {
+                    alert('No valid imageUrl fields found in JSON.');
+                    return;
+                }
+
+                revokeAllBatchBlobUrls();
+
+                batchResults = urls.map(url => ({ url, status: 'pending', pngDataUrl: null, pngBlobUrl: null, error: null }));
+                batchResultsContainer.classList.remove('hidden');
+                batchResultsList.innerHTML = '';
+                batchResultCount.textContent = urls.length;
+                batchProgressContainer.classList.remove('hidden');
+                updateBatchProgress(0, urls.length);
+                updateZipButtons();
+
+                batchResults.forEach((item, i) => {
+                    const row = renderBatchResultRow(item, i);
+                    batchResultsList.appendChild(row);
+                });
+
+                const proxyBase = proxyUrlBatch.value.trim();
+
+                for (let i = 0; i < urls.length; i++) {
+                    const url = urls[i];
+                    batchResults[i].status = 'converting';
+                    const currentRow = document.querySelector(`[data-index="${i}"]`);
+                    if (currentRow) {
+                        if (batchResults[i].pngBlobUrl) {
+                            URL.revokeObjectURL(batchResults[i].pngBlobUrl);
+                            batchResults[i].pngBlobUrl = null;
+                        }
+                        const newRow = renderBatchResultRow(batchResults[i], i);
+                        currentRow.replaceWith(newRow);
+                    }
+
+                    let finalUrl = url;
+                    if (proxyBase && /^https?:\/\//i.test(url)) {
+                        finalUrl = proxyBase + encodeURIComponent(url);
+                    }
+
+                    try {
+                        const resp = await fetch(finalUrl);
+                        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                        const blob = await resp.blob();
+                        const dataUrl = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result);
+                            reader.onerror = reject;
+                            reader.readAsDataURL(blob);
+                        });
+
+                        const pngDataUrl = await new Promise((resolve, reject) => {
+                            const img = new Image();
+                            img.onload = () => {
+                                try {
+                                    const canvas = document.createElement('canvas');
+                                    canvas.width = img.naturalWidth;
+                                    canvas.height = img.naturalHeight;
+                                    canvas.getContext('2d').drawImage(img, 0, 0);
+                                    resolve(canvas.toDataURL('image/png'));
+                                } catch (e) { reject(e); }
+                            };
+                            img.onerror = () => reject(new Error('Image load error'));
+                            img.src = dataUrl;
+                        });
+                        batchResults[i].pngDataUrl = pngDataUrl;
+                        batchResults[i].pngBlobUrl = dataUrlToBlobUrl(pngDataUrl);
+                        batchResults[i].status = 'done';
+                    } catch (err) {
+                        batchResults[i].status = 'error';
+                        batchResults[i].error = err.message;
+                    }
+
+                    const rowEl = document.querySelector(`[data-index="${i}"]`);
+                    if (rowEl) {
+                        const updatedRow = renderBatchResultRow(batchResults[i], i);
+                        rowEl.replaceWith(updatedRow);
+                    }
+
+                    const doneCount = batchResults.filter(r => r.status === 'done' || r.status === 'error').length;
+                    updateBatchProgress(doneCount, urls.length);
+                    updateZipButtons();
+                }
+
+                batchProgressContainer.classList.add('hidden');
+                updateZipButtons();
+            }
+
+            convertBatchBtn.addEventListener('click', convertBatch);
+
+            // Per‑item downloads (PNG or BLOB)
+            batchResultsList.addEventListener('click', (e) => {
+                const btn = e.target.closest('.download-single-btn');
+                if (!btn) return;
+                const index = parseInt(btn.getAttribute('data-index'));
+                const type = btn.getAttribute('data-type');
+                if (isNaN(index) || !batchResults[index]?.pngDataUrl) return;
+
+                if (type === 'blob') {
+                    const base64 = batchResults[index].pngDataUrl.split(',')[1];
+                    const byteCharacters = atob(base64);
+                    const byteArray = new Uint8Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteArray[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const blob = new Blob([byteArray], { type: 'application/octet-stream' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `flag_${index+1}.bin`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                } else {
+                    const a = document.createElement('a');
+                    a.href = batchResults[index].pngDataUrl;
+                    a.download = `flag_${index+1}.png`;
+                    a.click();
+                }
+            });
+
+            // Bulk PNG ZIP
+            downloadZipBtn.addEventListener('click', async () => {
+                const converted = batchResults.filter(r => r.pngDataUrl);
+                if (converted.length === 0) return;
+                const zip = new JSZip();
+                converted.forEach((item, idx) => {
+                    const base64 = item.pngDataUrl.split(',')[1];
+                    zip.file(`flag_${idx + 1}.png`, base64, { base64: true });
+                });
+                const blob = await zip.generateAsync({ type: 'blob' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'flags_png.zip';
+                a.click();
+                URL.revokeObjectURL(a.href);
+            });
+
+            // Bulk BLOBs ZIP
+            downloadBlobsZipBtn.addEventListener('click', async () => {
+                const converted = batchResults.filter(r => r.pngDataUrl);
+                if (converted.length === 0) return;
+                const zip = new JSZip();
+                converted.forEach((item, idx) => {
+                    const base64 = item.pngDataUrl.split(',')[1];
+                    const byteCharacters = atob(base64);
+                    const byteArray = new Uint8Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteArray[i] = byteCharacters.charCodeAt(i);
+                    }
+                    zip.file(`flag_${idx + 1}.bin`, byteArray, { binary: true });
+                });
+                const blob = await zip.generateAsync({ type: 'blob' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'flags_blobs.zip';
+                a.click();
+                URL.revokeObjectURL(a.href);
+            });
+
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', () => {
+                if (singlePngBlobUrl) URL.revokeObjectURL(singlePngBlobUrl);
+                revokeAllBatchBlobUrls();
+            });
+        })();
+    </script>
+</body>
+</html>
